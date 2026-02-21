@@ -2,6 +2,8 @@
 
 The official MCP server for [Arcate](https://arcate.io). Gives AI agents like Claude direct access to your product discovery workspace — reading signals, browsing your roadmap, and writing new feedback back in.
 
+This is a **remote HTTP server** — no installation required. Configure a URL in your MCP client and connect instantly.
+
 > **Requires an active Evidence subscription (€129/mo).** API keys are generated in `/settings/integrations` inside your Arcate workspace.
 
 ---
@@ -9,7 +11,7 @@ The official MCP server for [Arcate](https://arcate.io). Gives AI agents like Cl
 ## Quick Start
 
 ### 1. Generate an API Key
-Log into your Arcate workspace → **Settings → Integrations → Generate API Key**. Copy the key — it's shown only once.
+Log in → **Settings → Integrations → Generate API Key**. Copy the key — shown only once.
 
 ### 2. Configure your MCP client
 
@@ -18,20 +20,20 @@ Log into your Arcate workspace → **Settings → Integrations → Generate API 
 {
   "mcpServers": {
     "arcate": {
-      "command": "npx",
-      "args": ["-y", "@arcate/mcp-server"],
-      "env": {
-        "ARCATE_API_KEY": "arc_YOUR_KEY_HERE"
+      "url": "https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server",
+      "headers": {
+        "Authorization": "Bearer arc_YOUR_KEY_HERE"
       }
     }
   }
 }
 ```
 
-**Cursor** → Settings → MCP → Add Server → Command:
+**Cursor** → Settings → MCP → Add Server → Type: HTTP → URL:
 ```
-npx -y @arcate/mcp-server
+https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server
 ```
+Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
 ### 3. Restart your AI client and test
 > "What are my top 5 unlinked customer signals from the last 30 days?"
@@ -66,6 +68,17 @@ npx -y @arcate/mcp-server
 
 ---
 
+## Guided Prompts
+
+| Prompt | Description |
+|--------|-------------|
+| `arcate:hello` | Welcome — get workspace overview and available commands |
+| `arcate:ingest` | Log feedback from a call or interview |
+| `arcate:triage` | Find unlinked signals with no initiative assigned |
+| `arcate:enrich` | Strengthen a roadmap initiative with evidence |
+
+---
+
 ## Example Prompts
 
 **Triage a sales call:**
@@ -85,27 +98,18 @@ npx -y @arcate/mcp-server
 - Every request is re-validated against `billing_status` and `use_mcp` capability.
 - All queries are hard-scoped to your `organization_id`. Cross-tenant access is impossible.
 - MCP-created signals are tagged with `ingestion_source: mcp` for audit filtering in the UI.
-- Rate limit: 100 requests/min.
 
 ---
 
-## Development
+## Architecture
 
-```bash
-cd mcp/
-npm install
-cp .env.example .env   # fill in your values
-npm run dev            # run locally with tsx
-npm run build          # compile to dist/
-```
+The server is deployed as a Supabase Edge Function implementing JSON-RPC 2.0 over HTTP (the MCP Streamable HTTP transport). A `GET` request to the server URL returns a human-readable info card — no MCP client needed to inspect it.
 
-Environment variables needed for development (see `.env.example`):
-- `ARCATE_API_KEY` — your arc_ key
-- `ARCATE_SUPABASE_URL` — your Supabase project URL
-- `ARCATE_SUPABASE_SERVICE_KEY` — Supabase service role key (never expose client-side)
+Source: `src/` — TypeScript reference implementation  
+Deployment: Supabase Edge Functions (Deno)
 
 ---
 
 ## Database Setup
 
-Before running, apply the migration in `supabase/migrations/add_mcp_tables.sql` to your Supabase project.
+Apply the migration in `supabase/migrations/add_mcp_tables.sql` to bootstrap the `api_keys` table.
