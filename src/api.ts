@@ -1,0 +1,303 @@
+/**
+ * Arcate MCP Server — Supabase Data Client
+ *
+ * All data access methods used by the MCP tool handlers.
+ * Every query is hard-scoped to the authenticated organization_id.
+ */
+
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import {
+    Signal, Initiative, Customer,
+    CreateSignalInput, CreateCustomerInput, EnrichInitiativeInput,
+    SIGNAL_CATEGORIES, SIGNAL_TYPES, SIGNAL_SEVERITIES,
+    ArcateMCPError
+} from './types.js';
+
+// ─── Client Factory ───────────────────────────────────────────────────────────
+
+function getClient(): SupabaseClient {
+    const url = process.env.ARCATE_SUPABASE_URL;
+    const key = process.env.ARCATE_SUPABASE_SERVICE_KEY;
+    if (!url || !key) throw new ArcateMCPError('Server misconfiguration: Supabase env vars missing.');
+    return createClient(url, key);
+}
+
+// ─── Signals ──────────────────────────────────────────────────────────────────
+
+export async function fetchSignals(organizationId: string): Promise<Signal[]> {
+    const supabase = getClient();
+    const { data, error } = await supabase
+        .from('signals')
+        .select('id, readable_id, summary, description, type, category, severity, source, status, account_id, linked_initiative_id, organization_id, created_by, created_at, ingestion_source')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+    if (error) throw new ArcateMCPError(`Failed to fetch signals: ${error.message}`);
+    return data ?? [];
+}
+
+export async function searchSignals(
+    organizationId: string,
+    query: string,
+    filters?: { linked_initiative_id?: string | null; type?: string; severity?: string }
+): Promise<Signal[]> {
+    const supabase = getClient();
+    let req = supabase
+        .from('signals')
+        .select('id, readable_id, summary, description, type, category, severity, source, status, account_id, linked_initiative_id, organization_id, created_at, ingestion_source')
+        .eq('organization_id', organizationId)
+        .ilike('summary', `%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+    if (filters?.type) req = req.eq('type', filters.type);
+    if (filters?.severity) req = req.eq('severity', filters.severity);
+    if (filters?.linked_initiative_id === null) req = req.is('linked_initiative_id', null);
+    else if (filters?.linked_initiative_id) req = req.eq('linked_initiative_id', filters.linked_initiative_id);
+
+    const { data, error } = await req;
+    if (error) throw new ArcateMCPError(`Signal search failed: ${error.message}`);
+    return data ?? [];
+}
+
+export async function createSignal(
+    organizationId: string,
+    userId: string,
+    input: CreateSignalInput
+): Promise<{ signal_id: string; readable_id: string }> {
+    // Validate enums server-side (LLMs can hallucinate values)
+    if (!SIGNAL_TYPES.includes(input.type)) {
+        throw new ArcateMCPError(
+            `Invalid type '${input.type}'. Must be one of: ${SIGNAL_TYPES.join(', ')}.`
+        );
+    }
+    if (!SIGNAL_CATEGORIES.includes(input.category)) {
+        throw new ArcateMCPError(
+            `Invalid category '${input.category}'. Only '${SIGNAL_CATEGORIES.join("' and '")}' are permitted.`
+        );
+    }
+    if (!SIGNAL_SEVERITIES.includes(input.severity)) {
+        throw new ArcateMCPError(
+            `Invalid severity '${input.severity}'. Must be one of: ${SIGNAL_SEVERITIES.join(', ')}.`
+        );
+    }
+
+    const supabase = getClient();
+
+    // Generate readable ID (e.g. ARC-SIG-4821)
+    const prefix = 'ARC';
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const readable_id = `${prefix}-SIG-${randomNum}`;
+
+    const payload = {
+        id: crypto.randomUUID(),
+        readable_id,
+        summary: input.summary.trim(),
+        description: input.description?.trim(),
+        type: input.type,
+        category: input.category,
+        severity: input.severity,
+        source: input.source ?? 'mcp',
+        account_id: input.account_id,
+        status: 'New',
+        organization_id: organizationId,
+        created_by: userId,
+        ingestion_source: 'mcp',
+        raw_payload: { mcp_tool: 'create_signal', timestamp: new Date().toISOString() },
+        created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+        .from('signals')
+        .insert([payload])
+        .select('id, readable_id')
+        .single();
+
+    if (error) throw new ArcateMCPError(`Failed to create signal: ${error.message}`);
+    return { signal_id: data.id, readable_id: data.readable_id };
+}
+
+// ─── Initiatives ──────────────────────────────────────────────────────────────
+
+export async function fetchInitiatives(organizationId: string): Promise<Initiative[]> {
+    const supabase = getClient();
+    const { data, error } = await supabase
+        .from('initiatives')
+        .select('id, readable_id, title, brief, state, target_outcome, health_metrics, organization_id, created_by, created_at')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+    if (error) throw new ArcateMCPError(`Failed to fetch initiatives: ${error.message}`);
+    return data ?? [];
+}
+
+export async function searchInitiatives(organizationId: string, query: string): Promise<Initiative[]> {
+    const supabase = getClient();
+    const { data, error } = await supabase
+        .from('initiatives')
+        .select('id, readable_id, title, brief, state, target_outcome, health_metrics, organization_id, created_at')
+        .eq('organization_id', organizationId)
+        .ilike('title', `%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+    if (error) throw new ArcateMCPError(`Initiative search failed: ${error.message}`);
+    return data ?? [];
+}
+
+export async function linkSignalsToInitiative(
+    organizationId: string,
+    signalIds: string[],
+    initiativeId: string,
+    reasoning: string
+): Promise<{ updated: number }> {
+    const supabase = getClient();
+
+    // Verify initiative belongs to org
+    const { data: initiative, error: initErr } = await supabase
+        .from('initiatives')
+        .select('id')
+        .eq('id', initiativeId)
+        .eq('organization_id', organizationId)
+        .single();
+
+    if (initErr || !initiative) {
+        throw new ArcateMCPError(`Initiative '${initiativeId}' not found in your organization.`);
+    }
+
+    const { data: updated, error: updateError } = await supabase
+        .from('signals')
+        .update({ linked_initiative_id: initiativeId, status: 'In Progress' })
+        .in('id', signalIds)
+        .eq('organization_id', organizationId)
+        .select('id');
+
+    if (updateError) throw new ArcateMCPError(`Failed to link signals: ${updateError.message}`);
+
+    // Log the reasoning to each signal's raw_payload separately
+    for (const signalId of signalIds) {
+        await supabase
+            .from('signals')
+            .update({ raw_payload: { mcp_tool: 'link_to_initiative', reasoning, initiative_id: initiativeId } })
+            .eq('id', signalId)
+            .eq('organization_id', organizationId);
+    }
+
+    return { updated: updated?.length ?? 0 };
+
+}
+
+export async function enrichInitiative(
+    organizationId: string,
+    input: EnrichInitiativeInput
+): Promise<{ success: boolean }> {
+    const supabase = getClient();
+
+    // Verify initiative belongs to org
+    const { data: initiative, error: fetchErr } = await supabase
+        .from('initiatives')
+        .select('id, health_metrics, target_outcome')
+        .eq('id', input.initiative_id)
+        .eq('organization_id', organizationId)
+        .single();
+
+    if (fetchErr || !initiative) {
+        throw new ArcateMCPError(`Initiative '${input.initiative_id}' not found.`);
+    }
+
+    // Merge health_metrics (don't overwrite existing, merge new)
+    const existingMetrics = (initiative.health_metrics ?? {}) as Record<string, unknown>;
+    const newMetrics = input.health_metrics ?? {};
+    const mergedMetrics = { ...existingMetrics, ...newMetrics };
+
+    const updates: Record<string, unknown> = {};
+    if (input.refined_hypothesis) updates['brief'] = input.refined_hypothesis;
+    if (input.target_outcome) updates['target_outcome'] = input.target_outcome;
+    if (Object.keys(newMetrics).length > 0) updates['health_metrics'] = mergedMetrics;
+    if (input.start_date) updates['start_date'] = input.start_date;
+    if (input.target_date) updates['target_date'] = input.target_date;
+
+    if (Object.keys(updates).length === 0) {
+        throw new ArcateMCPError('No updates provided to enrich_initiative.');
+    }
+
+    const { error } = await supabase
+        .from('initiatives')
+        .update(updates)
+        .eq('id', input.initiative_id)
+        .eq('organization_id', organizationId);
+
+    if (error) throw new ArcateMCPError(`Failed to enrich initiative: ${error.message}`);
+
+    // Link additional signals if provided
+    if (input.additional_signal_ids && input.additional_signal_ids.length > 0) {
+        await supabase
+            .from('signals')
+            .update({ linked_initiative_id: input.initiative_id, status: 'In Progress' })
+            .in('id', input.additional_signal_ids)
+            .eq('organization_id', organizationId);
+    }
+
+    return { success: true };
+}
+
+// ─── Customers ────────────────────────────────────────────────────────────────
+
+export async function searchCustomers(organizationId: string, query: string): Promise<Customer[]> {
+    const supabase = getClient();
+    const { data, error } = await supabase
+        .from('customers')
+        .select('id, name, website, tier, arr, health_score, status, organization_id, created_at')
+        .eq('organization_id', organizationId)
+        .ilike('name', `%${query}%`)
+        .limit(10);
+
+    if (error) throw new ArcateMCPError(`Customer search failed: ${error.message}`);
+    return data ?? [];
+}
+
+export async function createCustomer(
+    organizationId: string,
+    userId: string,
+    input: CreateCustomerInput,
+    userRole: string
+): Promise<{ customer_id: string }> {
+    // Customer creation is owner-only (financial data integrity)
+    if (userRole !== 'owner') {
+        throw new ArcateMCPError('create_customer is restricted to Organization Owners to maintain financial data integrity.');
+    }
+
+    // Fuzzy duplicate check (basic substring, Levenshtein would need a lib)
+    const existing = await searchCustomers(organizationId, input.name.substring(0, 5));
+    const nameLower = input.name.toLowerCase();
+    const duplicate = existing.find(c =>
+        c.name.toLowerCase().includes(nameLower) || nameLower.includes(c.name.toLowerCase())
+    );
+    if (duplicate) {
+        throw new ArcateMCPError(
+            `Potential duplicate customer found: "${duplicate.name}" (id: ${duplicate.id}). Use the existing record or provide a more specific name.`
+        );
+    }
+
+    const supabase = getClient();
+    const id = `cus_arc_${crypto.randomUUID().split('-')[0]}`;
+
+    const { data, error } = await supabase
+        .from('customers')
+        .insert([{
+            id,
+            name: input.name.trim(),
+            website: input.website,
+            tier: input.tier ?? 'Standard',
+            arr: input.arr ?? 0,
+            organization_id: organizationId,
+            created_at: new Date().toISOString(),
+        }])
+        .select('id')
+        .single();
+
+    if (error) throw new ArcateMCPError(`Failed to create customer: ${error.message}`);
+    return { customer_id: data.id };
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@arcate/mcp-server",
+  "version": "0.1.0",
+  "description": "Arcate MCP Connect — Reasoning as a Service for product discovery",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "arcate-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "arcate",
+    "product-discovery",
+    "llm",
+    "model-context-protocol"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
