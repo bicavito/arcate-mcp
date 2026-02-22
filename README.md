@@ -20,7 +20,7 @@ Log in → **Settings → Integrations → Generate API Key**. Copy the key — 
 {
   "mcpServers": {
     "arcate": {
-      "url": "https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server",
+      "url": "https://mcp.arcate.io",
       "headers": {
         "Authorization": "Bearer arc_YOUR_KEY_HERE"
       }
