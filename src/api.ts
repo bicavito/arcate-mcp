@@ -8,7 +8,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
     Signal, Initiative, Customer,
-    CreateSignalInput, CreateCustomerInput, EnrichInitiativeInput,
+    CreateSignalInput, CreateCustomerInput, EnrichInitiativeInput, CreateInitiativeInput,
     SIGNAL_CATEGORIES, SIGNAL_TYPES, SIGNAL_SEVERITIES,
     ArcateMCPError
 } from './types.js';
@@ -145,6 +145,56 @@ export async function searchInitiatives(organizationId: string, query: string): 
 
     if (error) throw new ArcateMCPError(`Initiative search failed: ${error.message}`);
     return data ?? [];
+}
+
+export async function createInitiative(
+    organizationId: string,
+    userId: string,
+    input: CreateInitiativeInput
+): Promise<{ initiative_id: string; readable_id: string }> {
+    if (!input.title?.trim()) {
+        throw new ArcateMCPError('title is required and cannot be empty.');
+    }
+
+    const supabase = getClient();
+
+    // Generate readable ID (e.g. ARC-INI-4821)
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const readable_id = `ARC-INI-${randomNum}`;
+    const id = crypto.randomUUID();
+
+    const { data, error } = await supabase
+        .from('initiatives')
+        .insert([{
+            id,
+            readable_id,
+            title: input.title.trim(),
+            brief: input.brief?.trim() ?? null,
+            state: 'Triaged',
+            organization_id: organizationId,
+            created_by: userId,
+            created_at: new Date().toISOString(),
+        }])
+        .select('id, readable_id')
+        .single();
+
+    if (error) throw new ArcateMCPError(`Failed to create initiative: ${error.message}`);
+
+    // Optionally link signals in one batch update
+    if (input.signal_ids && input.signal_ids.length > 0) {
+        const { error: linkError } = await supabase
+            .from('signals')
+            .update({ linked_initiative_id: data.id, status: 'In Progress' })
+            .in('id', input.signal_ids)
+            .eq('organization_id', organizationId);
+
+        if (linkError) {
+            // Initiative was created — warn but don't fail
+            console.warn(`[Arcate MCP] create_initiative: signals linked partially — ${linkError.message}`);
+        }
+    }
+
+    return { initiative_id: data.id, readable_id: data.readable_id };
 }
 
 export async function linkSignalsToInitiative(

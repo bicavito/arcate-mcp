@@ -107,6 +107,12 @@ export interface EnrichInitiativeInput {
     target_date?: string;
 }
 
+export interface CreateInitiativeInput {
+    title: string;
+    brief?: string;
+    signal_ids?: string[];
+}
+
 // ─── Customer ─────────────────────────────────────────────────────────────────
 
 export const CUSTOMER_TIERS = ['Free', 'Standard', 'Premium', 'Enterprise'] as const;

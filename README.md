@@ -62,6 +62,7 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 ### Write
 | Tool | Description |
 |------|-------------|
+| `create_initiative` | Create a new roadmap initiative (optionally link signals atomically) |
 | `create_signal` | Ingest new customer feedback (tagged `ingestion_source: mcp`) |
 | `create_customer` | Add a new customer profile (Owner only) |
 | `link_to_initiative` | Connect signals to a roadmap initiative |

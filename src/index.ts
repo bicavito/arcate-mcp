@@ -37,6 +37,7 @@ import {
     searchCustomers,
     createSignal,
     createCustomer,
+    createInitiative,
     linkSignalsToInitiative,
     enrichInitiative,
 } from './api.js';
@@ -311,6 +312,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
         // ── Write Tools ──────────────────────────────────────────────────────────
         {
+            name: 'create_initiative',
+            description: 'Create a new roadmap initiative in Arcate. Optionally supply signal_ids to atomically link them on creation. Defaults to state: Triaged. Use search_initiatives first to avoid duplicates.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    title: { type: 'string', maxLength: 120, description: 'Short, clear initiative title (e.g. "Bulk CSV Export")' },
+                    brief: { type: 'string', description: 'Optional hypothesis or context — what problem does this initiative solve and why now?' },
+                    signal_ids: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Optional UUIDs of signals to link immediately. Equivalent to calling link_to_initiative after creation.'
+                    },
+                },
+                required: ['title'],
+            },
+        },
+        {
             name: 'create_signal',
             description: 'Ingest a new customer feedback signal into Arcate. All signals created via MCP are tagged with ingestion_source: mcp for audit. IMPORTANT: category must be exactly "feature" or "workflow".',
             inputSchema: {
@@ -494,6 +512,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
 
             // ── Write Tools ─────────────────────────────────────────────────────────
+            case 'create_initiative': {
+                const { title, brief, signal_ids } = args as {
+                    title: string;
+                    brief?: string;
+                    signal_ids?: string[];
+                };
+                const result = await createInitiative(auth.organizationId, auth.userId, { title, brief, signal_ids });
+                const linked = signal_ids?.length ? ` Linked ${signal_ids.length} signal(s).` : '';
+                return {
+                    content: [{
+                        type: 'text',
+                        text: `Initiative created successfully. ID: ${result.readable_id} (${result.initiative_id}).${linked}`,
+                    }],
+                };
+            }
+
             case 'create_signal': {
                 const input = args as Parameters<typeof createSignal>[2];
                 const result = await createSignal(auth.organizationId, auth.userId, input);
