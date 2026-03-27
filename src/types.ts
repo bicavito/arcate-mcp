@@ -57,6 +57,16 @@ export interface CreateSignalInput {
     account_id?: string;
 }
 
+export interface PatchSignalInput {
+    signal_id: string;
+    account_id?: string;
+    severity?: SignalSeverity;
+    type?: SignalType;
+    summary?: string;
+    description?: string;
+    source?: string;
+}
+
 // ─── Initiative ───────────────────────────────────────────────────────────────
 
 export const INITIATIVE_STATES = [
@@ -83,9 +93,9 @@ export interface Initiative {
     brief?: string;
     state: InitiativeState;
     target_outcome?: {
+        target_description: string;
         metric: string;
-        target_value: number;
-        timeframe: string;
+        validation_window_days: number;
     };
     health_metrics?: Record<string, HealthMetricValue | number>;
     organization_id: string;
@@ -95,12 +105,13 @@ export interface Initiative {
 
 export interface EnrichInitiativeInput {
     initiative_id: string;
+    title?: string;
     additional_signal_ids?: string[];
     refined_hypothesis?: string;
     target_outcome?: {
+        target_description: string;
         metric: string;
-        target_value: number;
-        timeframe: string;
+        validation_window_days: number;
     };
     health_metrics?: Record<string, HealthMetricValue | number>;
     start_date?: string;

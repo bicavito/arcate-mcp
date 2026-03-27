@@ -36,6 +36,7 @@ import {
     searchInitiatives,
     searchCustomers,
     createSignal,
+    patchSignal,
     createCustomer,
     createInitiative,
     linkSignalsToInitiative,
@@ -398,23 +399,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'enrich_initiative',
-            description: 'Strengthen an initiative with a refined hypothesis, target outcome, health metrics, or additional linked signals. Use standard metric names when possible.',
+            description: 'Strengthen an initiative with a refined hypothesis, target outcome, health metrics, or additional linked signals. Also supports renaming the initiative title. Use standard metric names when possible.',
             inputSchema: {
                 type: 'object',
                 properties: {
                     initiative_id: { type: 'string', format: 'uuid', description: 'UUID of the initiative to update' },
+                    title: { type: 'string', maxLength: 120, description: 'Rename the initiative title' },
                     refined_hypothesis: { type: 'string', description: 'Updated initiative brief/hypothesis based on new evidence' },
                     target_outcome: {
                         type: 'object',
+                        description: 'Defines the expected outcome. Example: { target_description: "Reduce churn by 40% within 90 days", metric: "churn", validation_window_days: 90 }',
                         properties: {
-                            metric: { type: 'string', description: 'e.g. "Login time (p95)"' },
-                            target_value: { type: 'number' },
-                            timeframe: { type: 'string', description: 'e.g. "Q2 2026"' },
+                            target_description: { type: 'string', description: 'Human-readable outcome statement, e.g. "Reduce prompt-ceiling churn by 60% within 90 days of launch"' },
+                            metric: { type: 'string', description: 'Metric category: e.g. "revenue", "churn", "activation", "adoption"' },
+                            validation_window_days: { type: 'number', description: 'Days to validate the outcome, e.g. 30, 60, 90' },
                         },
                     },
                     health_metrics: {
                         type: 'object',
-                        description: 'Key-value pairs. Standard keys: "Retention Rate", "Time to Value", "Activation Rate", "Adoption Rate", "Expansion Rate", "Churn Rate". Each value: { value: number, type: "percentage"|"ratio"|"currency"|"duration"|"number" }',
+                        description: 'Key-value pairs where each value MUST be numeric. For percentage metrics, use a plain number (e.g. {"Adoption Rate": 0}). For other types, use {value: number, type: "percentage"|"ratio"|"currency"|"duration"|"number"} (e.g. {"Time to Value": {value: 14, type: "duration"}}). NEVER pass strings as values.',
                         additionalProperties: {
                             oneOf: [
                                 { type: 'number' },
@@ -440,6 +443,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 required: ['initiative_id'],
             },
         },
+        {
+            name: 'patch_signal',
+            description: 'Update one or more fields on an existing signal. Use this to correct ingestion errors (wrong account_id, severity, type) without deleting and recreating the signal. Supply only the fields to change.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    signal_id: { type: 'string', format: 'uuid', description: 'UUID of the signal to patch' },
+                    account_id: { type: 'string', description: 'Correct or add the customer account ID' },
+                    severity: { type: 'string', enum: ['Low', 'Medium', 'High'], description: 'Updated severity' },
+                    type: { type: 'string', enum: ['mention', 'friction', 'problem', 'deal-loss'], description: 'Updated signal type' },
+                    summary: { type: 'string', maxLength: 200, description: 'Corrected summary (max 200 chars)' },
+                    description: { type: 'string', description: 'Corrected full description' },
+                    source: { type: 'string', enum: ['Slack', 'Intercom', 'E-Mail', 'Support ticket', 'Sales call', 'User interview'], description: 'Updated source' },
+                },
+                required: ['signal_id'],
+            },
+        },
     ],
 }));
 
@@ -449,7 +469,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
     // All tools require auth
-    const scope = ['create_signal', 'create_customer', 'link_to_initiative', 'enrich_initiative'].includes(name)
+    const scope = ['create_signal', 'patch_signal', 'create_customer', 'link_to_initiative', 'enrich_initiative', 'create_initiative'].includes(name)
         ? 'write'
         : 'read';
 
@@ -589,6 +609,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     content: [{
                         type: 'text',
                         text: `Initiative ${input.initiative_id} enriched successfully.`,
+                    }],
+                };
+            }
+
+            case 'patch_signal': {
+                const input = args as Parameters<typeof patchSignal>[1];
+                const result = await patchSignal(auth.organizationId, input);
+                return {
+                    content: [{
+                        type: 'text',
+                        text: `Signal ${result.signal_id} patched successfully.`,
                     }],
                 };
             }
