@@ -139,6 +139,16 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 
 ---
 
+## Bootstrapping Your Roadmap
+
+Already have a large backlog of signals? Use the **Roadmap Bootstrap Prompt** to turn your entire signal corpus into a structured, prioritized roadmap in a single session — no manual triage required.
+
+This is different from the `arcate:triage` guided prompt, which is designed for incremental, session-level review. The Bootstrap Prompt is a one-shot workflow for **50+ signals** that need to be clustered and mapped to initiatives from scratch.
+
+→ **[Roadmap Bootstrap Prompt](prompts/roadmap-bootstrap.md)**
+
+---
+
 ## Security
 
 - Keys are stored as SHA-256 hashes. The plaintext is shown only once and never stored.
