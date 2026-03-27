@@ -49,7 +49,7 @@ export async function searchSignals(
         .eq('organization_id', organizationId)
         .ilike('summary', `%${query}%`)
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(500);
 
     if (filters?.type) req = req.eq('type', filters.type);
     if (filters?.severity) req = req.eq('severity', filters.severity);
@@ -216,7 +216,7 @@ export async function searchInitiatives(organizationId: string, query: string): 
         .eq('organization_id', organizationId)
         .ilike('title', `%${query}%`)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(50);
 
     if (error) throw new ArcateMCPError(`Initiative search failed: ${error.message}`);
     return data ?? [];

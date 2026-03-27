@@ -131,8 +131,8 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 | Runtime | Supabase Edge Functions (Deno) |
 | Auth | SHA-256 hashed API keys, prefix-indexed for fast lookup |
 | Scope | Hard-scoped to `organization_id` — cross-tenant access impossible |
-| `search_signals` limit | **20 results** per call |
-| `search_initiatives` limit | **10 results** per call |
+| `search_signals` limit | **500 results** per call |
+| `search_initiatives` limit | **50 results** per call |
 | `batch_create_signals` limit | **100 signals** per call — split larger batches |
 | `arcate://signals` resource | Returns latest **200 signals** |
 | `arcate://initiatives` resource | Returns latest **100 initiatives** |
