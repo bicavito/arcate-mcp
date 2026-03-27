@@ -67,6 +67,31 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 | `create_customer` | Add a new customer profile (Owner only) |
 | `link_to_initiative` | Connect signals to a roadmap initiative |
 | `enrich_initiative` | Update hypothesis, metrics, and outcomes |
+| `patch_signal` | Update fields on an existing signal |
+
+### `enrich_initiative` Schema
+
+**`target_outcome`** — defines the expected outcome:
+```json
+{
+  "target_description": "Reduce prompt-ceiling churn by 60% within 90 days",
+  "metric": "churn",
+  "validation_window_days": 90
+}
+```
+
+**`health_metrics`** — key-value pairs where values **must be numeric**:
+```json
+{
+  "Adoption Rate": 0,
+  "Retention Rate": 85,
+  "Time to Value": { "value": 14, "type": "duration" },
+  "Expansion Rate": { "value": 1.5, "type": "ratio" }
+}
+```
+
+Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency`, `duration`, `number`.
+
 
 ---
 
