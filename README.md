@@ -131,22 +131,11 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 | Runtime | Supabase Edge Functions (Deno) |
 | Auth | SHA-256 hashed API keys, prefix-indexed for fast lookup |
 | Scope | Hard-scoped to `organization_id` — cross-tenant access impossible |
-| `search_signals` limit | **20 results** per call (ilike match on summary only) |
+| `search_signals` limit | **20 results** per call |
 | `search_initiatives` limit | **10 results** per call |
 | `batch_create_signals` limit | **100 signals** per call — split larger batches |
 | `arcate://signals` resource | Returns latest **200 signals** |
 | `arcate://initiatives` resource | Returns latest **100 initiatives** |
-| Corpus-scale analysis | Not suited for LLM-driven analysis of 500+ signals via MCP — use the Simulation Runner for semantic clustering, then write results via MCP |
-| Signal linking | `link_to_initiative` iterates per signal (N DB writes) — batch sizes of 50–100 are practical |
-| Cold start | Edge function may have ~300ms cold start on first request after inactivity |
-
-### When NOT to use the MCP for bulk operations
-
-The MCP is optimized for **incremental, session-level ingestion** — e.g. logging 3–20 signals from a single call or interview. For corpus-level operations (500+ signals), use:
-
-1. **Simulation Runner** — for semantic clustering, thematic analysis, and initiative drafting
-2. **Supabase SQL** — for bulk signal unlinking, purging, or cross-initiative reshuffling
-3. **MCP** — as the final write layer to persist the finalized, high-quality output
 
 ---
 
