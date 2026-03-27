@@ -113,7 +113,7 @@ export async function createSignal(
     return { signal_id: data.id, readable_id: data.readable_id };
 }
 
-export async function patchSignal(
+export async function updateSignal(
     organizationId: string,
     input: PatchSignalInput
 ): Promise<{ signal_id: string }> {
@@ -134,7 +134,7 @@ export async function patchSignal(
     if (input.source) updates['source'] = input.source;
 
     if (Object.keys(updates).length === 0) {
-        throw new ArcateMCPError('No fields provided to patch. Supply at least one: account_id, severity, type, summary, description, source.');
+        throw new ArcateMCPError('No fields provided to update. Supply at least one: account_id, severity, type, summary, description, source.');
     }
 
     const supabase = getClient();
@@ -146,8 +146,51 @@ export async function patchSignal(
         .select('id')
         .single();
 
-    if (error || !data) throw new ArcateMCPError(`Failed to patch signal '${input.signal_id}': ${error?.message ?? 'not found or access denied'}`);
+    if (error || !data) throw new ArcateMCPError(`Failed to update signal '${input.signal_id}': ${error?.message ?? 'not found or access denied'}`);
     return { signal_id: data.id };
+}
+
+export async function batchCreateSignals(
+    organizationId: string,
+    userId: string,
+    signals: CreateSignalInput[]
+): Promise<{ created: number; ids: { signal_id: string; readable_id: string }[] }> {
+    if (!signals?.length) throw new ArcateMCPError('signals array must not be empty.');
+    if (signals.length > 100) throw new ArcateMCPError('Maximum 100 signals per batch. Split into multiple batches.');
+
+    const payloads = signals.map(input => {
+        if (!SIGNAL_TYPES.includes(input.type)) throw new ArcateMCPError(`Invalid type '${input.type}' in batch. Must be one of: ${SIGNAL_TYPES.join(', ')}.`);
+        if (!SIGNAL_CATEGORIES.includes(input.category)) throw new ArcateMCPError(`Invalid category '${input.category}'. Only 'feature' and 'workflow' are permitted.`);
+        if (!SIGNAL_SEVERITIES.includes(input.severity)) throw new ArcateMCPError(`Invalid severity '${input.severity}'. Must be Low, Medium, or High.`);
+        return {
+            id: crypto.randomUUID(),
+            summary: input.summary.trim(),
+            description: input.description?.trim(),
+            type: input.type,
+            category: input.category,
+            severity: input.severity,
+            source: input.source ?? 'mcp',
+            account_id: input.account_id,
+            status: 'New',
+            organization_id: organizationId,
+            created_by: userId,
+            ingestion_source: 'mcp' as const,
+            raw_payload: { mcp_tool: 'batch_create_signals', timestamp: new Date().toISOString() },
+            created_at: new Date().toISOString(),
+        };
+    });
+
+    const supabase = getClient();
+    const { data, error } = await supabase
+        .from('signals')
+        .insert(payloads)
+        .select('id, readable_id');
+
+    if (error) throw new ArcateMCPError(`Batch signal creation failed: ${error.message}`);
+    return {
+        created: data?.length ?? 0,
+        ids: (data ?? []).map(d => ({ signal_id: d.id, readable_id: d.readable_id })),
+    };
 }
 
 // ─── Initiatives ──────────────────────────────────────────────────────────────

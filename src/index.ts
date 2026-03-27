@@ -36,7 +36,8 @@ import {
     searchInitiatives,
     searchCustomers,
     createSignal,
-    patchSignal,
+    batchCreateSignals,
+    updateSignal,
     createCustomer,
     createInitiative,
     linkSignalsToInitiative,
@@ -444,12 +445,40 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             },
         },
         {
-            name: 'patch_signal',
-            description: 'Update one or more fields on an existing signal. Use this to correct ingestion errors (wrong account_id, severity, type) without deleting and recreating the signal. Supply only the fields to change.',
+            name: 'batch_create_signals',
+            description: 'Ingest multiple feedback signals in a single call. Accepts an array of up to 100 signals. Use this instead of calling create_signal repeatedly when ingesting bulk feedback. All signals are tagged ingestion_source: mcp.',
             inputSchema: {
                 type: 'object',
                 properties: {
-                    signal_id: { type: 'string', format: 'uuid', description: 'UUID of the signal to patch' },
+                    signals: {
+                        type: 'array',
+                        description: 'Array of up to 100 signal objects to create in one batch.',
+                        maxItems: 100,
+                        items: {
+                            type: 'object',
+                            properties: {
+                                summary: { type: 'string', maxLength: 200, description: 'Short description (max 200 chars)' },
+                                description: { type: 'string', description: 'Full context from the customer interaction' },
+                                type: { type: 'string', enum: ['mention', 'friction', 'problem', 'deal-loss'] },
+                                category: { type: 'string', enum: ['feature', 'workflow'] },
+                                severity: { type: 'string', enum: ['Low', 'Medium', 'High'] },
+                                source: { type: 'string', enum: ['Slack', 'Intercom', 'E-Mail', 'Support ticket', 'Sales call', 'User interview'] },
+                                account_id: { type: 'string' },
+                            },
+                            required: ['summary', 'type', 'category', 'severity'],
+                        },
+                    },
+                },
+                required: ['signals'],
+            },
+        },
+        {
+            name: 'update_signal',
+            description: 'Update one or more fields on an existing signal. Use to correct ingestion errors (wrong account_id, severity, type) without deleting and recreating. Supply only the fields to change.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    signal_id: { type: 'string', format: 'uuid', description: 'UUID of the signal to update' },
                     account_id: { type: 'string', description: 'Correct or add the customer account ID' },
                     severity: { type: 'string', enum: ['Low', 'Medium', 'High'], description: 'Updated severity' },
                     type: { type: 'string', enum: ['mention', 'friction', 'problem', 'deal-loss'], description: 'Updated signal type' },
@@ -469,7 +498,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
     // All tools require auth
-    const scope = ['create_signal', 'patch_signal', 'create_customer', 'link_to_initiative', 'enrich_initiative', 'create_initiative'].includes(name)
+    const scope = ['create_signal', 'batch_create_signals', 'update_signal', 'create_customer', 'link_to_initiative', 'enrich_initiative', 'create_initiative'].includes(name)
         ? 'write'
         : 'read';
 
@@ -559,6 +588,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
             }
 
+            case 'batch_create_signals': {
+                const { signals } = args as { signals: Parameters<typeof batchCreateSignals>[2] };
+                const result = await batchCreateSignals(auth.organizationId, auth.userId, signals);
+                return {
+                    content: [{
+                        type: 'text',
+                        text: `Batch complete: ${result.created} signal(s) created. First ID: ${result.ids[0]?.readable_id ?? 'n/a'}`,
+                    }],
+                };
+            }
+
             case 'create_customer': {
                 const input = args as Parameters<typeof createCustomer>[2];
                 // Fetch role from users table
@@ -613,13 +653,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
             }
 
-            case 'patch_signal': {
-                const input = args as Parameters<typeof patchSignal>[1];
-                const result = await patchSignal(auth.organizationId, input);
+            case 'update_signal': {
+                const input = args as Parameters<typeof updateSignal>[1];
+                const result = await updateSignal(auth.organizationId, input);
                 return {
                     content: [{
                         type: 'text',
-                        text: `Signal ${result.signal_id} patched successfully.`,
+                        text: `Signal ${result.signal_id} updated successfully.`,
                     }],
                 };
             }

@@ -19,7 +19,7 @@ Log in → **Settings → Integrations → Generate API Key**. Copy the key — 
 ```json
 {
   "mcpServers": {
-"arcate": {
+    "arcate": {
       "serverUrl": "https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server",
       "headers": {
         "Authorization": "Bearer [YOUR API KEY]"
@@ -27,17 +27,16 @@ Log in → **Settings → Integrations → Generate API Key**. Copy the key — 
     }
   }
 }
-
 ```
 
 **Cursor** → Settings → MCP → Add Server → Type: HTTP → URL:
 ```
-https://mcp.arcate.io
+https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server
 ```
 Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
 ### 3. Restart your AI client and test
-> "What are my top 5 unlinked customer signals from the last 30 days?"
+> "What are my top 5 unlinked customer signals?"
 
 ---
 
@@ -45,8 +44,8 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
 | URI | Description |
 |-----|-------------|
-| `arcate://signals` | Unified Signal Inbox — all customer feedback |
-| `arcate://initiatives` | Product Roadmap — active initiatives with evidence |
+| `arcate://signals` | Unified Signal Inbox — all customer feedback (latest 200) |
+| `arcate://initiatives` | Product Roadmap — active initiatives with evidence (latest 100) |
 
 ---
 
@@ -55,7 +54,7 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 ### Read
 | Tool | Description |
 |------|-------------|
-| `search_signals` | Search signals by keyword, type, or severity |
+| `search_signals` | Search signals by keyword, type, severity, or `unlinked_only` |
 | `search_customers` | Look up customer accounts by name |
 | `search_initiatives` | Find initiatives by keyword |
 
@@ -63,11 +62,12 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 | Tool | Description |
 |------|-------------|
 | `create_initiative` | Create a new roadmap initiative (optionally link signals atomically) |
-| `create_signal` | Ingest new customer feedback (tagged `ingestion_source: mcp`) |
+| `create_signal` | Ingest a single customer feedback signal |
+| `batch_create_signals` | Ingest up to 100 signals in one call — prefer this over looping `create_signal` |
 | `create_customer` | Add a new customer profile (Owner only) |
 | `link_to_initiative` | Connect signals to a roadmap initiative |
-| `enrich_initiative` | Update hypothesis, metrics, and outcomes |
-| `patch_signal` | Update fields on an existing signal |
+| `enrich_initiative` | Update hypothesis, metrics, and outcome |
+| `update_signal` | Correct fields on an existing signal (account_id, severity, type, summary) |
 
 ### `enrich_initiative` Schema
 
@@ -92,6 +92,7 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
 Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency`, `duration`, `number`.
 
+> ⚠️ Passing string values for health metrics will return a validation error.
 
 ---
 
@@ -108,14 +109,44 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 
 ## Example Prompts
 
-**Triage a sales call:**
-> "I just spoke with Acme Corp. They said bulk export times out on datasets over 100k rows. Log this as a signal."
+**Bulk ingest from call notes:**
+> "Here are notes from 8 customer calls this week. Use batch_create_signals to log them all."
 
-**Review initiative evidence:**
-> "Does our Mobile Revamp initiative have enough signal coverage to proceed to active?"
+**Triage unlinked signals:**
+> "Find all High-severity unlinked signals and suggest which initiatives they belong to."
 
-**Batch ingest:**
-> "Here are notes from 3 customer calls this week. Create signals for each and link them to relevant initiatives."
+**Enrich an initiative:**
+> "Does our API Access initiative have enough signal coverage to proceed to Active?"
+
+**Correct a signal:**
+> "The last signal I created has the wrong account_id. Update it to the Acme Corp ID."
+
+---
+
+## Tech Spec & Limitations
+
+| Property | Value |
+|----------|-------|
+| Protocol | JSON-RPC 2.0 over HTTP (MCP Streamable HTTP transport) |
+| Runtime | Supabase Edge Functions (Deno) |
+| Auth | SHA-256 hashed API keys, prefix-indexed for fast lookup |
+| Scope | Hard-scoped to `organization_id` — cross-tenant access impossible |
+| `search_signals` limit | **20 results** per call (ilike match on summary only) |
+| `search_initiatives` limit | **10 results** per call |
+| `batch_create_signals` limit | **100 signals** per call — split larger batches |
+| `arcate://signals` resource | Returns latest **200 signals** |
+| `arcate://initiatives` resource | Returns latest **100 initiatives** |
+| Corpus-scale analysis | Not suited for LLM-driven analysis of 500+ signals via MCP — use the Simulation Runner for semantic clustering, then write results via MCP |
+| Signal linking | `link_to_initiative` iterates per signal (N DB writes) — batch sizes of 50–100 are practical |
+| Cold start | Edge function may have ~300ms cold start on first request after inactivity |
+
+### When NOT to use the MCP for bulk operations
+
+The MCP is optimized for **incremental, session-level ingestion** — e.g. logging 3–20 signals from a single call or interview. For corpus-level operations (500+ signals), use:
+
+1. **Simulation Runner** — for semantic clustering, thematic analysis, and initiative drafting
+2. **Supabase SQL** — for bulk signal unlinking, purging, or cross-initiative reshuffling
+3. **MCP** — as the final write layer to persist the finalized, high-quality output
 
 ---
 
@@ -132,8 +163,9 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 
 The server is deployed as a Supabase Edge Function implementing JSON-RPC 2.0 over HTTP (the MCP Streamable HTTP transport). A `GET` request to the server URL returns a human-readable info card — no MCP client needed to inspect it.
 
-Source: `src/` — TypeScript reference implementation  
-Deployment: Supabase Edge Functions (Deno)
+**Source:** `src/` — TypeScript reference implementation  
+**Deployment:** Supabase Edge Functions (Deno)  
+**Current version:** v0.9.0 (edge function v11)
 
 ---
 
