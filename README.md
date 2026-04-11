@@ -20,7 +20,7 @@ Log in → **Settings → Integrations → Generate API Key**. Copy the key — 
 {
   "mcpServers": {
     "arcate": {
-      "serverUrl": "https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server",
+      "serverUrl": "https://mcp.arcate.io",
       "headers": {
         "Authorization": "Bearer [YOUR API KEY]"
       }
@@ -31,7 +31,7 @@ Log in → **Settings → Integrations → Generate API Key**. Copy the key — 
 
 **Cursor** → Settings → MCP → Add Server → Type: HTTP → URL:
 ```
-https://eshuikffwhaxcvkzaewj.supabase.co/functions/v1/mcp-server
+https://mcp.arcate.io
 ```
 Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
