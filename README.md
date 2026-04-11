@@ -36,7 +36,7 @@ https://mcp.arcate.io
 Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
 ### 3. Restart your AI client and test
-> "What are my top 5 unlinked customer signals?"
+> "What should we build next?"
 
 ---
 
@@ -45,7 +45,7 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 | URI | Description |
 |-----|-------------|
 | `arcate://signals` | Unified Signal Inbox — all customer feedback (latest 200) |
-| `arcate://initiatives` | Product Roadmap — active initiatives with evidence (latest 100) |
+| `arcate://initiatives` | Product Roadmap — initiatives ranked by impact score with evidence (latest 100) |
 
 ---
 
@@ -56,7 +56,8 @@ Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 |------|-------------|
 | `search_signals` | Search signals by keyword, type, severity, or `unlinked_only` |
 | `search_customers` | Look up customer accounts by name |
-| `search_initiatives` | Find initiatives by keyword |
+| `search_initiatives` | Find initiatives by keyword (includes impact scores) |
+| `rank_initiatives` | Rank all initiatives by Fermi impact score — *"what should we build next?"* |
 
 ### Write
 | Tool | Description |
@@ -104,6 +105,7 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 | `arcate:ingest` | Log feedback from a call or interview |
 | `arcate:triage` | Find unlinked signals with no initiative assigned |
 | `arcate:enrich` | Strengthen a roadmap initiative with evidence |
+| `arcate:rank` | Rank all initiatives by impact and recommend what to build next |
 
 ---
 
@@ -117,6 +119,9 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 
 **Enrich an initiative:**
 > "Does our API Access initiative have enough signal coverage to proceed to Active?"
+
+**Rank initiatives:**
+> "Rank my roadmap by impact. Which initiative has the strongest evidence?"
 
 **Correct a signal:**
 > "The last signal I created has the wrong account_id. Update it to the Acme Corp ID."
@@ -164,7 +169,7 @@ The server is deployed as a Supabase Edge Function implementing JSON-RPC 2.0 ove
 
 **Source:** `src/` — TypeScript reference implementation  
 **Deployment:** Supabase Edge Functions (Deno)  
-**Current version:** v0.9.0 (edge function v11)
+**Current version:** v0.10.0 (edge function v15)
 
 ---
 
