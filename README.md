@@ -1,19 +1,32 @@
-# Arcate MCP Connect — Server
+# Arcate MCP Server
 
-The official MCP server for [Arcate](https://arcate.io). Gives AI agents like Claude direct access to your product discovery workspace — reading signals, browsing your roadmap, and writing new feedback back in.
+Your AI agent doesn't know who your customers are. It doesn't know which ones pay the most, which ones are churning, or which problems have been reported twelve times. Every session starts from scratch — and the output shows it.
 
-This is a **remote HTTP server** — no installation required. Configure a URL in your MCP client and connect instantly.
+Arcate fixes that. One config block, and your agent gets structured, revenue-weighted customer evidence it can query mid-conversation.
 
-> **Requires an active Evidence subscription (€129/mo).** API keys are generated in `/settings/integrations` inside your Arcate workspace.
+```
+You: "What should we build next?"
+
+Agent (via rank_initiatives):
+
+  1. Remove the Prompt Ceiling for Agencies — Score: 21K (High Leverage)
+     $487K ARR across 32 accounts, 47 signals
+  2. Tell Users What To Do Next — Score: 1.0K (Medium Leverage)
+     $332K ARR across 37 accounts, 56 signals
+  3. Launch a Public REST API — Score: 3.3K (High Risk)
+     $221K ARR but thin evidence — needs more validation
+```
+
+That's not a mockup. That's the actual output from a live workspace with real customer data, scored by impact.
 
 ---
 
-## Quick Start
+## Setup (2 minutes)
 
 ### 1. Generate an API Key
 Log in → **Settings → Integrations → Generate API Key**. Copy the key — shown only once.
 
-### 2. Configure your MCP client
+### 2. Add to your MCP client
 
 **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 ```json
@@ -22,55 +35,103 @@ Log in → **Settings → Integrations → Generate API Key**. Copy the key — 
     "arcate": {
       "serverUrl": "https://mcp.arcate.io",
       "headers": {
-        "Authorization": "Bearer [YOUR API KEY]"
+        "Authorization": "Bearer arc_YOUR_KEY_HERE"
       }
     }
   }
 }
 ```
 
-**Cursor** → Settings → MCP → Add Server → Type: HTTP → URL:
-```
-https://mcp.arcate.io
-```
+**Cursor** → Settings → MCP → Add Server → Type: HTTP → URL: `https://mcp.arcate.io`  
 Header: `Authorization: Bearer arc_YOUR_KEY_HERE`
 
-### 3. Restart your AI client and test
-> "What should we build next?"
+### 3. Test it
+> "What are my highest-impact initiatives? Which ones have enough evidence to commit resources?"
+
+No installation. No npm. It's a remote HTTP server — configure the URL and go.
+
+> **Requires an active Evidence subscription (€129/mo).** API keys are generated in `/settings/integrations` inside your Arcate workspace.
 
 ---
 
-## Resources (Read-Only)
+## What Your Agent Gets
 
-| URI | Description |
-|-----|-------------|
-| `arcate://signals` | Unified Signal Inbox — all customer feedback (latest 200) |
-| `arcate://initiatives` | Product Roadmap — initiatives ranked by impact score with evidence (latest 100) |
+### Resources (live data streams)
+
+| URI | What it contains |
+|-----|-----------------|
+| `arcate://signals` | Every customer signal — feedback, friction, problems, deal-losses — tagged by source, severity, and linked account (latest 200) |
+| `arcate://initiatives` | Your roadmap ranked by impact score — each initiative includes ARR at risk, signal volume, unique accounts, and evidence label (latest 100) |
+
+### Read Tools
+
+| Tool | What it does |
+|------|-------------|
+| `search_signals` | Find signals by keyword, type, severity, or `unlinked_only` |
+| `search_customers` | Look up customer accounts by name — always call before creating signals |
+| `search_initiatives` | Find initiatives by keyword — returns impact scores |
+| `rank_initiatives` | Rank all initiatives by impact score and return the full breakdown — *the core tool* |
+
+### Write Tools
+
+| Tool | What it does |
+|------|-------------|
+| `create_signal` | Turn raw feedback into a structured, linked signal |
+| `batch_create_signals` | Ingest up to 100 signals in one call |
+| `create_initiative` | Create a new roadmap initiative (optionally link signals on creation) |
+| `create_customer` | Add a customer profile with ARR and tier (Owner only) |
+| `link_to_initiative` | Connect signals to an initiative with reasoning |
+| `enrich_initiative` | Update hypothesis, metrics, dates, and outcome targets |
+| `update_signal` | Correct fields on an existing signal |
 
 ---
 
-## Tools
+## What the Agent Does With It
 
-### Read
-| Tool | Description |
-|------|-------------|
-| `search_signals` | Search signals by keyword, type, severity, or `unlinked_only` |
-| `search_customers` | Look up customer accounts by name |
-| `search_initiatives` | Find initiatives by keyword (includes impact scores) |
-| `rank_initiatives` | Rank all initiatives by Fermi impact score — *"what should we build next?"* |
+### "What should we build next?"
 
-### Write
-| Tool | Description |
-|------|-------------|
-| `create_initiative` | Create a new roadmap initiative (optionally link signals atomically) |
-| `create_signal` | Ingest a single customer feedback signal |
-| `batch_create_signals` | Ingest up to 100 signals in one call — prefer this over looping `create_signal` |
-| `create_customer` | Add a new customer profile (Owner only) |
-| `link_to_initiative` | Connect signals to a roadmap initiative |
-| `enrich_initiative` | Update hypothesis, metrics, and outcome |
-| `update_signal` | Correct fields on an existing signal (account_id, severity, type, summary) |
+Your agent calls `rank_initiatives`. Every initiative comes back scored by a Fermi leverage model that weights:
 
-### `enrich_initiative` Schema
+- **Revenue at risk** — log-scaled ARR across all linked customer accounts
+- **Signal strength** — type-weighted (deal-loss > problem > friction > mention), sqrt-dampened
+- **Evidence breadth** — confirmation bonus for signals from multiple independent accounts
+- **Risk detection** — high ARR with thin evidence gets flagged as "High Risk"
+
+The labels tell you what to do:
+- **High Leverage** — evidence supports committing resources
+- **Medium Leverage** — promising, worth deeper investigation
+- **High Risk** — significant revenue at stake but insufficient evidence — validate before building
+- **Low Confidence** / **Negligible** — weak signal, deprioritize
+
+### "Log this customer feedback"
+
+After a call, paste your notes. The agent:
+1. Resolves the customer via `search_customers`
+2. Creates structured signals via `batch_create_signals`
+3. Links them to relevant initiatives via `link_to_initiative`
+4. The impact scores update automatically
+
+### "Triage my inbox"
+
+The agent calls `search_signals` with `unlinked_only: true`, groups by severity and type, and suggests which initiatives each signal belongs to. If a cluster has no matching initiative, it creates one.
+
+---
+
+## Guided Prompts
+
+These appear as clickable flows in Claude's prompt picker and Cursor's slash commands:
+
+| Prompt | What it does |
+|--------|-------------|
+| `arcate:hello` | Welcome — workspace overview and all available commands |
+| `arcate:ingest` | Guided signal ingestion from raw call notes |
+| `arcate:triage` | Surface and assign unlinked signals |
+| `arcate:enrich` | Strengthen an initiative with evidence and metrics |
+| `arcate:rank` | Rank initiatives by impact — what to build next |
+
+---
+
+## `enrich_initiative` Schema
 
 **`target_outcome`** — defines the expected outcome:
 ```json
@@ -97,58 +158,9 @@ Valid metric types: `percentage` (default for plain numbers), `ratio`, `currency
 
 ---
 
-## Guided Prompts
-
-| Prompt | Description |
-|--------|-------------|
-| `arcate:hello` | Welcome — get workspace overview and available commands |
-| `arcate:ingest` | Log feedback from a call or interview |
-| `arcate:triage` | Find unlinked signals with no initiative assigned |
-| `arcate:enrich` | Strengthen a roadmap initiative with evidence |
-| `arcate:rank` | Rank all initiatives by impact and recommend what to build next |
-
----
-
-## Example Prompts
-
-**Bulk ingest from call notes:**
-> "Here are notes from 8 customer calls this week. Use batch_create_signals to log them all."
-
-**Triage unlinked signals:**
-> "Find all High-severity unlinked signals and suggest which initiatives they belong to."
-
-**Enrich an initiative:**
-> "Does our API Access initiative have enough signal coverage to proceed to Active?"
-
-**Rank initiatives:**
-> "Rank my roadmap by impact. Which initiative has the strongest evidence?"
-
-**Correct a signal:**
-> "The last signal I created has the wrong account_id. Update it to the Acme Corp ID."
-
----
-
-## Tech Spec & Limitations
-
-| Property | Value |
-|----------|-------|
-| Protocol | JSON-RPC 2.0 over HTTP (MCP Streamable HTTP transport) |
-| Runtime | Supabase Edge Functions (Deno) |
-| Auth | SHA-256 hashed API keys, prefix-indexed for fast lookup |
-| Scope | Hard-scoped to `organization_id` — cross-tenant access impossible |
-| `search_signals` limit | **500 results** per call |
-| `search_initiatives` limit | **50 results** per call |
-| `batch_create_signals` limit | **100 signals** per call — split larger batches |
-| `arcate://signals` resource | Returns latest **200 signals** |
-| `arcate://initiatives` resource | Returns latest **100 initiatives** |
-
----
-
 ## Bootstrapping Your Roadmap
 
 Already have a large backlog of signals? Use the **Roadmap Bootstrap Prompt** to turn your entire signal corpus into a structured, prioritized roadmap in a single session — no manual triage required.
-
-This is different from the `arcate:triage` guided prompt, which is designed for incremental, session-level review. The Bootstrap Prompt is a one-shot workflow for **50+ signals** that need to be clustered and mapped to initiatives from scratch.
 
 → **[Roadmap Bootstrap Prompt](prompts/roadmap-bootstrap.md)**
 
@@ -159,17 +171,29 @@ This is different from the `arcate:triage` guided prompt, which is designed for 
 - Keys are stored as SHA-256 hashes. The plaintext is shown only once and never stored.
 - Every request is re-validated against `billing_status` and `use_mcp` capability.
 - All queries are hard-scoped to your `organization_id`. Cross-tenant access is impossible.
-- MCP-created signals are tagged with `ingestion_source: mcp` for audit filtering in the UI.
+- MCP-created signals are tagged with `ingestion_source: mcp` for audit filtering.
 
----
+## Tech Spec
+
+| Property | Value |
+|----------|-------|
+| Protocol | JSON-RPC 2.0 over HTTP (MCP Streamable HTTP transport) |
+| Runtime | Supabase Edge Functions (Deno) |
+| Auth | SHA-256 hashed API keys, prefix-indexed |
+| Scope | Hard-scoped to `organization_id` — cross-tenant access impossible |
+| `search_signals` limit | 500 results per call |
+| `search_initiatives` limit | 50 results per call |
+| `batch_create_signals` limit | 100 signals per call |
+| `arcate://signals` resource | Latest 200 signals |
+| `arcate://initiatives` resource | Latest 100 initiatives, ranked by impact |
 
 ## Architecture
 
-The server is deployed as a Supabase Edge Function implementing JSON-RPC 2.0 over HTTP (the MCP Streamable HTTP transport). A `GET` request to the server URL returns a human-readable info card — no MCP client needed to inspect it.
+Deployed as a Supabase Edge Function implementing JSON-RPC 2.0 over HTTP. A `GET` request to the server URL returns a human-readable info card — no MCP client needed to inspect it.
 
-**Source:** `src/` — TypeScript reference implementation  
+**Source:** [`src/`](src/) — TypeScript reference implementation  
 **Deployment:** Supabase Edge Functions (Deno)  
-**Current version:** v0.10.0 (edge function v15)
+**Current version:** v0.10.0
 
 ---
 
