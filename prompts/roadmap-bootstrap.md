@@ -24,7 +24,10 @@ Follow these steps exactly:
 ---
 
 STEP 1 — LOAD ALL SIGNALS
-Read the full signal corpus using the arcate://signals resource. Do not search — load everything.
+First, read the arcate://signals resource for an overview (total count, severity breakdown, unlinked count).
+Then call search_signals with a broad query (e.g. " ") and unlinked_only: false to retrieve the full corpus.
+If the response indicates truncation (total_matching > returned), run additional filtered searches
+by type or severity to ensure full coverage. Use get_signal to fetch full descriptions when needed for clustering.
 
 STEP 2 — CLUSTER BY THEME
 Group signals into recurring themes. A theme is valid only if it:

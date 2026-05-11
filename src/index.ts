@@ -30,8 +30,9 @@ import {
 
 import { requireAuth } from './auth.js';
 import {
-    fetchSignals,
-    fetchInitiatives,
+    fetchSignalsSummary,
+    fetchInitiativesSummary,
+    getSignal,
     searchSignals,
     searchInitiatives,
     searchCustomers,
@@ -134,12 +135,13 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
                                 '',
                                 'I have direct access to your product discovery workspace. Here\'s what I can see and do:',
                                 '',
-                                '**📚 Your Data**',
-                                '- `arcate://signals` — Unified Signal Inbox (all customer feedback, friction points, deal-losses)',
-                                '- `arcate://initiatives` — Product Roadmap (active initiatives with hypotheses and health metrics)',
+                                '**📚 Your Data (summaries)**',
+                                '- `arcate://signals` — Signal Inbox Summary (counts, severity breakdown, last 10 signals)',
+                                '- `arcate://initiatives` — Roadmap Summary (counts, state breakdown, top 5 by evidence)',
                                 '',
                                 '**🔍 Extract** — Read your workspace',
-                                '- `search_signals` — Find signals by keyword, type, or severity',
+                                '- `search_signals` — Find signals by keyword, type, or severity (lean results with truncation info)',
+                                '- `get_signal` — Fetch full detail for a specific signal (including description and raw payload)',
                                 '- `search_customers` — Look up customer accounts',
                                 '- `search_initiatives` — Find roadmap initiatives by keyword',
                                 '',
@@ -221,14 +223,14 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => ({
     resources: [
         {
             uri: 'arcate://signals',
-            name: 'Unified Signal Inbox',
-            description: 'All customer feedback, friction points, and feature requests, structured and tagged. Use this as your ground truth for customer evidence.',
+            name: 'Signal Inbox Summary',
+            description: 'Overview of your signal corpus: total count, unlinked count, severity/type breakdown, and the 10 most recent signals (lean, no description). Use search_signals and get_signal tools to explore and drill into detail.',
             mimeType: 'application/json',
         },
         {
             uri: 'arcate://initiatives',
-            name: 'Product Roadmap',
-            description: 'Active roadmap initiatives with hypotheses, target outcomes, health metrics, and linked signal counts.',
+            name: 'Roadmap Summary',
+            description: 'Overview of your roadmap: total count, state breakdown, and top 5 initiatives by linked signal count. Use search_initiatives and rank_initiatives tools for full data.',
             mimeType: 'application/json',
         },
     ],
@@ -245,23 +247,23 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
 
     if (uri === 'arcate://signals') {
-        const signals = await fetchSignals(auth.organizationId);
+        const summary = await fetchSignalsSummary(auth.organizationId);
         return {
             contents: [{
                 uri,
                 mimeType: 'application/json',
-                text: JSON.stringify(signals, null, 2),
+                text: JSON.stringify(summary, null, 2),
             }],
         };
     }
 
     if (uri === 'arcate://initiatives') {
-        const initiatives = await fetchInitiatives(auth.organizationId);
+        const summary = await fetchInitiativesSummary(auth.organizationId);
         return {
             contents: [{
                 uri,
                 mimeType: 'application/json',
-                text: JSON.stringify(initiatives, null, 2),
+                text: JSON.stringify(summary, null, 2),
             }],
         };
     }
@@ -277,7 +279,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         // ── Read Tools ───────────────────────────────────────────────────────────
         {
             name: 'search_signals',
-            description: 'Search signals by keyword and optional filters. Use before creating a signal to check for duplicates.',
+            description: 'Search signals by keyword and optional filters. Returns lean results (no description field) with truncation metadata. Use get_signal to fetch full detail for a specific signal. Use before creating a signal to check for duplicates.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -287,6 +289,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                     unlinked_only: { type: 'boolean', description: 'If true, only return signals not linked to any initiative' },
                 },
                 required: ['query'],
+            },
+        },
+        {
+            name: 'get_signal',
+            description: 'Fetch the full detail of a single signal by ID, including description and raw_payload. Use after search_signals to drill into a specific signal.',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    signal_id: { type: 'string', format: 'uuid', description: 'UUID of the signal to retrieve' },
+                },
+                required: ['signal_id'],
             },
         },
         {
@@ -302,7 +315,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: 'search_initiatives',
-            description: 'Search roadmap initiatives by keyword. Use to find existing initiatives before linking signals.',
+            description: 'Search roadmap initiatives by keyword with truncation metadata. Use to find existing initiatives before linking signals.',
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -519,17 +532,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     severity?: string;
                     unlinked_only?: boolean;
                 };
-                const results = await searchSignals(auth.organizationId, query, {
+                const { signals, meta } = await searchSignals(auth.organizationId, query, {
                     type,
                     severity,
                     linked_initiative_id: unlinked_only ? null : undefined,
                 });
+                if (signals.length === 0) {
+                    return {
+                        content: [{ type: 'text', text: `No signals found matching "${query}".` }],
+                    };
+                }
+                const truncationNote = meta.truncated
+                    ? `\n\nNote: Showing ${meta.returned} of ${meta.total_matching} matching signals. Narrow your query or add filters to see more specific results. Use get_signal(signal_id) to fetch full detail including description.`
+                    : `\n\nShowing all ${meta.returned} matching signal(s). Use get_signal(signal_id) to fetch full detail including description.`;
                 return {
                     content: [{
                         type: 'text',
-                        text: results.length === 0
-                            ? `No signals found matching "${query}".`
-                            : JSON.stringify(results, null, 2),
+                        text: JSON.stringify(signals, null, 2) + truncationNote,
+                    }],
+                };
+            }
+
+            case 'get_signal': {
+                const { signal_id } = args as { signal_id: string };
+                const signal = await getSignal(auth.organizationId, signal_id);
+                return {
+                    content: [{
+                        type: 'text',
+                        text: JSON.stringify(signal, null, 2),
                     }],
                 };
             }
@@ -549,13 +579,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
             case 'search_initiatives': {
                 const { query } = args as { query: string };
-                const results = await searchInitiatives(auth.organizationId, query);
+                const { initiatives, meta } = await searchInitiatives(auth.organizationId, query);
+                if (initiatives.length === 0) {
+                    return {
+                        content: [{ type: 'text', text: `No initiatives found matching "${query}".` }],
+                    };
+                }
+                const truncationNote = meta.truncated
+                    ? `\n\nNote: Showing ${meta.returned} of ${meta.total_matching} matching initiatives. Narrow your query for more specific results.`
+                    : '';
                 return {
                     content: [{
                         type: 'text',
-                        text: results.length === 0
-                            ? `No initiatives found matching "${query}".`
-                            : JSON.stringify(results, null, 2),
+                        text: JSON.stringify(initiatives, null, 2) + truncationNote,
                     }],
                 };
             }

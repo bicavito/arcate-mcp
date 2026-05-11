@@ -148,6 +148,51 @@ export interface CreateCustomerInput {
     arr?: number;
 }
 
+// ─── Lean Types (for resource summaries and search results) ───────────────────
+
+/** Signal without description — used in list/search responses to save tokens. */
+export interface SignalSummary {
+    id: string;
+    readable_id: string;
+    summary: string;
+    type: SignalType;
+    category: SignalCategory;
+    severity: SignalSeverity;
+    source?: SignalSource | string;
+    status: string;
+    account_id?: string;
+    linked_initiative_id?: string;
+    organization_id: string;
+    created_at: string;
+    ingestion_source?: 'web' | 'mcp' | 'intercom_sync' | 'api' | 'bulk_import';
+}
+
+export interface SignalsSummaryResponse {
+    total_signals: number;
+    unlinked_signals: number;
+    by_severity: { High: number; Medium: number; Low: number };
+    by_type: Record<string, number>;
+    recent: SignalSummary[];
+}
+
+export interface InitiativesSummaryResponse {
+    total_initiatives: number;
+    by_state: Record<string, number>;
+    top_by_signal_count: {
+        id: string;
+        readable_id: string;
+        title: string;
+        state: string;
+        signal_count: number;
+    }[];
+}
+
+export interface SearchResultMeta {
+    returned: number;
+    total_matching: number;
+    truncated: boolean;
+}
+
 // ─── MCP Errors ───────────────────────────────────────────────────────────────
 
 export class ArcateMCPError extends Error {

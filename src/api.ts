@@ -7,7 +7,8 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
-    Signal, Initiative, Customer,
+    Signal, SignalSummary, Initiative, Customer,
+    SignalsSummaryResponse, InitiativesSummaryResponse, SearchResultMeta,
     CreateSignalInput, PatchSignalInput, CreateCustomerInput, EnrichInitiativeInput, CreateInitiativeInput,
     SIGNAL_CATEGORIES, SIGNAL_TYPES, SIGNAL_SEVERITIES, SIGNAL_SOURCES,
     ArcateMCPError
@@ -24,32 +25,117 @@ function getClient(): SupabaseClient {
 
 // ─── Signals ──────────────────────────────────────────────────────────────────
 
-export async function fetchSignals(organizationId: string): Promise<Signal[]> {
+/** Lean select clause shared by search/list queries (no description). */
+const SIGNAL_LEAN_SELECT = 'id, readable_id, summary, type, category, severity, source, status, account_id, linked_initiative_id, organization_id, created_at, ingestion_source';
+
+/** Full select clause for single-signal detail. */
+const SIGNAL_FULL_SELECT = 'id, readable_id, summary, description, type, category, severity, source, status, account_id, linked_initiative_id, organization_id, created_by, created_at, ingestion_source, raw_payload';
+
+/**
+ * Resource handler: returns a summary of the signal corpus for orientation.
+ * Replaces the old 200-signal full dump with counts + last 10 lean signals.
+ */
+export async function fetchSignalsSummary(organizationId: string): Promise<SignalsSummaryResponse> {
+    const supabase = getClient();
+
+    // Total count
+    const { count: totalSignals, error: countErr } = await supabase
+        .from('signals')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId);
+    if (countErr) throw new ArcateMCPError(`Failed to count signals: ${countErr.message}`);
+
+    // Unlinked count
+    const { count: unlinkedSignals, error: unlinkErr } = await supabase
+        .from('signals')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .is('linked_initiative_id', null);
+    if (unlinkErr) throw new ArcateMCPError(`Failed to count unlinked signals: ${unlinkErr.message}`);
+
+    // Recent 10 lean signals
+    const { data: recent, error: recentErr } = await supabase
+        .from('signals')
+        .select(SIGNAL_LEAN_SELECT)
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+    if (recentErr) throw new ArcateMCPError(`Failed to fetch recent signals: ${recentErr.message}`);
+
+    // Severity breakdown (from recent+all signals — count-based)
+    const { data: allLean, error: allErr } = await supabase
+        .from('signals')
+        .select('severity, type')
+        .eq('organization_id', organizationId);
+    if (allErr) throw new ArcateMCPError(`Failed to fetch signal breakdown: ${allErr.message}`);
+
+    const bySeverity = { High: 0, Medium: 0, Low: 0 };
+    const byType: Record<string, number> = {};
+    for (const s of allLean ?? []) {
+        if (s.severity in bySeverity) bySeverity[s.severity as keyof typeof bySeverity]++;
+        byType[s.type] = (byType[s.type] ?? 0) + 1;
+    }
+
+    return {
+        total_signals: totalSignals ?? 0,
+        unlinked_signals: unlinkedSignals ?? 0,
+        by_severity: bySeverity,
+        by_type: byType,
+        recent: (recent ?? []) as SignalSummary[],
+    };
+}
+
+/**
+ * Detail tool: returns the full payload for a single signal by ID.
+ */
+export async function getSignal(organizationId: string, signalId: string): Promise<Signal> {
     const supabase = getClient();
     const { data, error } = await supabase
         .from('signals')
-        .select('id, readable_id, summary, description, type, category, severity, source, status, account_id, linked_initiative_id, organization_id, created_by, created_at, ingestion_source')
+        .select(SIGNAL_FULL_SELECT)
+        .eq('id', signalId)
         .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(200);
+        .single();
 
-    if (error) throw new ArcateMCPError(`Failed to fetch signals: ${error.message}`);
-    return data ?? [];
+    if (error || !data) throw new ArcateMCPError(`Signal '${signalId}' not found or access denied.`);
+    return data as Signal;
 }
 
+/**
+ * Search tool: returns lean signals (no description) with truncation metadata.
+ * Use get_signal to fetch full detail for a specific signal.
+ */
 export async function searchSignals(
     organizationId: string,
     query: string,
     filters?: { linked_initiative_id?: string | null; type?: string; severity?: string }
-): Promise<Signal[]> {
+): Promise<{ signals: SignalSummary[]; meta: SearchResultMeta }> {
     const supabase = getClient();
+    const LIMIT = 100;
+
+    // Count total matching first
+    let countReq = supabase
+        .from('signals')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .ilike('summary', `%${query}%`);
+
+    if (filters?.type) countReq = countReq.eq('type', filters.type);
+    if (filters?.severity) countReq = countReq.eq('severity', filters.severity);
+    if (filters?.linked_initiative_id === null) countReq = countReq.is('linked_initiative_id', null);
+    else if (filters?.linked_initiative_id) countReq = countReq.eq('linked_initiative_id', filters.linked_initiative_id);
+
+    const { count: totalMatching, error: countErr } = await countReq;
+    if (countErr) throw new ArcateMCPError(`Signal count failed: ${countErr.message}`);
+
+    // Fetch lean results
     let req = supabase
         .from('signals')
-        .select('id, readable_id, summary, description, type, category, severity, source, status, account_id, linked_initiative_id, organization_id, created_at, ingestion_source')
+        .select(SIGNAL_LEAN_SELECT)
         .eq('organization_id', organizationId)
         .ilike('summary', `%${query}%`)
         .order('created_at', { ascending: false })
-        .limit(500);
+        .limit(LIMIT);
 
     if (filters?.type) req = req.eq('type', filters.type);
     if (filters?.severity) req = req.eq('severity', filters.severity);
@@ -58,7 +144,18 @@ export async function searchSignals(
 
     const { data, error } = await req;
     if (error) throw new ArcateMCPError(`Signal search failed: ${error.message}`);
-    return data ?? [];
+
+    const results = (data ?? []) as SignalSummary[];
+    const total = totalMatching ?? results.length;
+
+    return {
+        signals: results,
+        meta: {
+            returned: results.length,
+            total_matching: total,
+            truncated: total > LIMIT,
+        },
+    };
 }
 
 export async function createSignal(
@@ -195,31 +292,95 @@ export async function batchCreateSignals(
 
 // ─── Initiatives ──────────────────────────────────────────────────────────────
 
-export async function fetchInitiatives(organizationId: string): Promise<Initiative[]> {
+/**
+ * Resource handler: returns a summary of the initiative corpus.
+ * Includes counts by state and top initiatives by linked signal count.
+ */
+export async function fetchInitiativesSummary(organizationId: string): Promise<InitiativesSummaryResponse> {
     const supabase = getClient();
-    const { data, error } = await supabase
-        .from('initiatives')
-        .select('id, readable_id, title, brief, state, target_outcome, health_metrics, organization_id, created_by, created_at')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(100);
 
-    if (error) throw new ArcateMCPError(`Failed to fetch initiatives: ${error.message}`);
-    return data ?? [];
+    // All initiatives (lean — just id, readable_id, title, state)
+    const { data: all, error: allErr } = await supabase
+        .from('initiatives')
+        .select('id, readable_id, title, state')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false });
+    if (allErr) throw new ArcateMCPError(`Failed to fetch initiatives: ${allErr.message}`);
+
+    const initiatives = all ?? [];
+
+    // State breakdown
+    const byState: Record<string, number> = {};
+    for (const i of initiatives) {
+        byState[i.state] = (byState[i.state] ?? 0) + 1;
+    }
+
+    // Count linked signals per initiative
+    const topWithCounts: { id: string; readable_id: string; title: string; state: string; signal_count: number }[] = [];
+    for (const init of initiatives) {
+        const { count, error: cErr } = await supabase
+            .from('signals')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', organizationId)
+            .eq('linked_initiative_id', init.id);
+        topWithCounts.push({
+            id: init.id,
+            readable_id: init.readable_id,
+            title: init.title,
+            state: init.state,
+            signal_count: count ?? 0,
+        });
+    }
+
+    // Sort by signal count descending, take top 5
+    topWithCounts.sort((a, b) => b.signal_count - a.signal_count);
+
+    return {
+        total_initiatives: initiatives.length,
+        by_state: byState,
+        top_by_signal_count: topWithCounts.slice(0, 5),
+    };
 }
 
-export async function searchInitiatives(organizationId: string, query: string): Promise<Initiative[]> {
+/**
+ * Search tool: returns full initiative objects with truncation metadata.
+ */
+export async function searchInitiatives(
+    organizationId: string,
+    query: string
+): Promise<{ initiatives: Initiative[]; meta: SearchResultMeta }> {
     const supabase = getClient();
+    const LIMIT = 50;
+
+    // Count total
+    const { count: totalMatching, error: countErr } = await supabase
+        .from('initiatives')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .ilike('title', `%${query}%`);
+    if (countErr) throw new ArcateMCPError(`Initiative count failed: ${countErr.message}`);
+
+    // Fetch results
     const { data, error } = await supabase
         .from('initiatives')
         .select('id, readable_id, title, brief, state, target_outcome, health_metrics, organization_id, created_at')
         .eq('organization_id', organizationId)
         .ilike('title', `%${query}%`)
         .order('created_at', { ascending: false })
-        .limit(50);
-
+        .limit(LIMIT);
     if (error) throw new ArcateMCPError(`Initiative search failed: ${error.message}`);
-    return data ?? [];
+
+    const results = (data ?? []) as Initiative[];
+    const total = totalMatching ?? results.length;
+
+    return {
+        initiatives: results,
+        meta: {
+            returned: results.length,
+            total_matching: total,
+            truncated: total > LIMIT,
+        },
+    };
 }
 
 export async function createInitiative(
