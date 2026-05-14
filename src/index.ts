@@ -608,7 +608,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return {
                     content: [{
                         type: 'text',
-                        text: `Initiative created successfully. ID: ${result.readable_id} (${result.initiative_id}).${linked}`,
+                        text: `Initiative created successfully. ID: ${result.display_id} (${result.initiative_id}).${linked}`,
                     }],
                 };
             }
@@ -619,7 +619,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return {
                     content: [{
                         type: 'text',
-                        text: `Signal created successfully. ID: ${result.readable_id} (${result.signal_id})`,
+                        text: `Signal created successfully. ID: ${result.display_id} (${result.signal_id})`,
                     }],
                 };
             }
@@ -630,7 +630,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return {
                     content: [{
                         type: 'text',
-                        text: `Batch complete: ${result.created} signal(s) created. First ID: ${result.ids[0]?.readable_id ?? 'n/a'}`,
+                        text: `Batch complete: ${result.created} signal(s) created. First ID: ${result.ids[0]?.display_id ?? 'n/a'}`,
                     }],
                 };
             }

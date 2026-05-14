@@ -30,7 +30,7 @@ export type SignalSource = typeof SIGNAL_SOURCES[number];
 
 export interface Signal {
     id: string;
-    readable_id: string;
+    display_id: string;
     summary: string;
     description?: string;
     type: SignalType;
@@ -88,7 +88,7 @@ export interface HealthMetricValue {
 
 export interface Initiative {
     id: string;
-    readable_id: string;
+    display_id: string;
     title: string;
     brief?: string;
     state: InitiativeState;
@@ -153,7 +153,7 @@ export interface CreateCustomerInput {
 /** Signal without description — used in list/search responses to save tokens. */
 export interface SignalSummary {
     id: string;
-    readable_id: string;
+    display_id: string;
     summary: string;
     type: SignalType;
     category: SignalCategory;
@@ -180,7 +180,7 @@ export interface InitiativesSummaryResponse {
     by_state: Record<string, number>;
     top_by_signal_count: {
         id: string;
-        readable_id: string;
+        display_id: string;
         title: string;
         state: string;
         signal_count: number;
