@@ -4,7 +4,7 @@
  */
 
 export const SEVERITY_WEIGHT: Record<string, number> = { 'High': 3, 'Medium': 2, 'Low': 1 };
-export const TIER_WEIGHTS: Record<string, number> = { 'Enterprise': 100, 'Scale': 30, 'Standard': 10, 'Startup': 3, 'Free': 1 };
+export const TIER_WEIGHTS: Record<string, number> = { 'Enterprise': 100, 'Standard': 10, 'Startup': 3 };
 export const SIGNAL_TYPE_WEIGHTS: Record<string, number> = { 'deal-loss': 30, 'problem': 10, 'friction': 3, 'mention': 1 };
 
 export interface ImpactResult {

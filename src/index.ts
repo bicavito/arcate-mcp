@@ -386,7 +386,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                     website: { type: 'string', description: 'Company website URL (optional)' },
                     tier: {
                         type: 'string',
-                        enum: ['Free', 'Standard', 'Premium', 'Enterprise'],
+                        enum: ['Startup', 'Standard', 'Enterprise'],
                         description: 'Customer subscription tier',
                     },
                     arr: { type: 'number', minimum: 0, description: 'Annual Recurring Revenue in your base currency' },

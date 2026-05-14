@@ -126,7 +126,7 @@ export interface CreateInitiativeInput {
 
 // ─── Customer ─────────────────────────────────────────────────────────────────
 
-export const CUSTOMER_TIERS = ['Free', 'Standard', 'Premium', 'Enterprise'] as const;
+export const CUSTOMER_TIERS = ['Startup', 'Standard', 'Enterprise'] as const;
 export type CustomerTier = typeof CUSTOMER_TIERS[number];
 
 export interface Customer {
